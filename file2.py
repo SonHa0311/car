@@ -583,8 +583,10 @@ def connect_to_file3():
 def send_tcp_command(sock, command):
     sock.sendall(command.encode())
 
-# Nhận dữ liệu từ File 1
+
 def receive_from_file1():
+    latest_position = None  # Biến lưu vị trí mới nhất
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((file1_ip, file1_port))
         sock.listen(1)
@@ -594,20 +596,31 @@ def receive_from_file1():
         with conn:
             print(f"Kết nối từ File 1: {addr}")
             while True:
-                data = conn.recv(1024)
-                if not data:
-                    break
+                try:
+                    data = conn.recv(1024)
+                    if not data:
+                        break
 
-                # Giải mã dữ liệu vị trí từ File 1
-                position_data = json.loads(data.decode('utf-8'))
-                Car_x, Car_y, Car_yaw = position_data["x"], position_data["y"], position_data["theta"]
+                    # Giải mã dữ liệu vị trí từ File 1
+                    position_data = json.loads(data.decode('utf-8'))
+                    Car_x = position_data.get("x", 0)
+                    Car_y = position_data.get("y", 0)
+                    Car_yaw = position_data.get("theta", 0)
 
-                print(f"Nhận dữ liệu từ File 1: x = {Car_x}, y = {Car_y}, theta = {Car_yaw}")
+                    # Cập nhật vị trí mới nhất
+                    latest_position = {"x": Car_x, "y": Car_y, "theta": Car_yaw}
 
-                # Chạy thuật toán Hybrid A*
-                process_path_planning(Car_x, Car_y, Car_yaw)
+                    print(f"Nhận dữ liệu từ File 1: {latest_position}")
 
-                time.sleep(0.1)
+                    # Trả về vị trí hiện tại
+                    process_path_planning(**latest_position)
+                    # process_path_planning(Car_x, Car_y, Car_yaw)
+
+
+                except json.JSONDecodeError:
+                    print("Lỗi giải mã JSON, bỏ qua gói tin không hợp lệ.")
+                except Exception as e:
+                    print(f"Lỗi: {e}")
 
 # Xử lý thuật toán tìm đường
 
@@ -632,15 +645,7 @@ def process_path_planning(Car_x, Car_y, Car_yaw):
         print(f"Step {k}: x = {x[k]:.2f}, y = {y[k]:.2f}, yaw = {math.degrees(yaw[k]):.2f} degrees")
 
         while True:
-            # Nhận vị trí hiện tại từ File 1
-            # Instead of calling receive_from_file1() which would try to bind to the port again,
-            # we'll use the current position and update it with a small random change to simulate movement
             Car_x, Car_y, Car_yaw = receive_from_file1()
-            
-            # Simulate small movement from current position
-            # Car_x += np.random.normal(0, 0.1)
-            # Car_y += np.random.normal(0, 0.1)
-            # Car_yaw += np.random.normal(0, 0.5)
             
             print(f"Current position: x = {Car_x:.2f}, y = {Car_y:.2f}, yaw = {Car_yaw:.2f}")
 
@@ -690,6 +695,7 @@ def process_path_planning(Car_x, Car_y, Car_yaw):
     # Đóng kết nối
     if sock is not None:
         sock.close()
+
 
 # Hàm chính
 def main():
