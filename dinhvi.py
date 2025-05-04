@@ -80,14 +80,16 @@ def process_video(video_path, client_socket=None):
     H = get_homography_matrix()
     if H is None:
         print("Could not initialize coordinate transformation!")
-        return
+        return None, None, None
 
     if not cap.isOpened():
         print("Không thể mở video!")
-        return
+        return None, None, None
 
     random_point_pixel = None
     random_point_real = None
+
+    last_car_x, last_car_y, last_car_yaw = None, None, None
 
     def mouse_callback(event, x, y, flags, param):
         nonlocal random_point_pixel, random_point_real
@@ -162,6 +164,9 @@ def process_video(video_path, client_socket=None):
                 arrow_y = int(tag_y + 30 * np.sin(car_yaw_rad))
                 cv2.arrowedLine(frame, (tag_x, tag_y), (arrow_x, arrow_y), (0, 255, 0), 2, tipLength=0.3)
 
+                if car_x is not None and car_y is not None and car_yaw_deg is not None:
+                    last_car_x, last_car_y, last_car_yaw = car_x, car_y, car_yaw_deg
+
             cv2.circle(frame, (tag_x, tag_y), 5, (0, 0, 255), -1)
             cv2.putText(frame, f"ID: {tag.tag_id}",
                         (tag_x + 10, tag_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
@@ -172,6 +177,11 @@ def process_video(video_path, client_socket=None):
 
     cap.release()
     cv2.destroyAllWindows()
+    return last_car_x, last_car_y, last_car_yaw
+
+def run_apriltag(video_path):
+    return process_video(video_path)
 
 if __name__ == "__main__":
-    process_video('/Users/laptopjp/Desktop/VS_Code/HybridAStar/tester1.mp4')
+    car_x, car_y, car_yaw = run_apriltag('/Users/laptopjp/Desktop/VS_Code/HybridAStar/tester1.mp4')
+    print(f"Car Position: X={car_x:.2f}, Y={car_y:.2f}, Yaw={car_yaw:.2f}")
