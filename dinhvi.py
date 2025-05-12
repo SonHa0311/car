@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from scipy.spatial.distance import cdist
 from pyapriltags import Detector
+import matplotlib.pyplot as plt
+
 
 def find_intersection(ray_origin, ray_angle, line_points):
     direction = np.array([np.cos(ray_angle), np.sin(ray_angle)])
@@ -55,23 +57,25 @@ def get_homography_matrix():
         return None
 
 def pixel_to_real(pixel_point, H):
+    h_cam = 323
+    h_xe = 13
     if H is None:
         return None
     pixel_homogeneous = np.array([pixel_point[0], pixel_point[1], 1])
     real_homogeneous = np.dot(H, pixel_homogeneous)
-    car_x = real_homogeneous[0] / real_homogeneous[2]
-    car_y = real_homogeneous[1] / real_homogeneous[2]
+    car_x = (real_homogeneous[0] / real_homogeneous[2])*(h_cam - h_xe)/h_cam
+    car_y = (real_homogeneous[1] / real_homogeneous[2])*(h_cam - h_xe)/h_cam
     return (car_x, car_y)
 
-def real_to_pixel(real_point, H):
-    if H is None:
-        return None
-    real_homogeneous = np.array([real_point[0], real_point[1], 1])
-    H_inv = np.linalg.inv(H)
-    pixel_homogeneous = np.dot(H_inv, real_homogeneous)
-    pixel_x = pixel_homogeneous[0] / pixel_homogeneous[2]
-    pixel_y = pixel_homogeneous[1] / pixel_homogeneous[2]
-    return (int(pixel_x), int(pixel_y))
+# def real_to_pixel(real_point, H):
+#     if H is None:
+#         return None
+#     real_homogeneous = np.array([real_point[0], real_point[1], 1])
+#     H_inv = np.linalg.inv(H)
+#     pixel_homogeneous = np.dot(H_inv, real_homogeneous)
+#     pixel_x = pixel_homogeneous[0] / pixel_homogeneous[2]
+#     pixel_y = pixel_homogeneous[1] / pixel_homogeneous[2]
+#     return (int(pixel_x), int(pixel_y))
 
 def process_video(video_path, client_socket=None):
     cap = cv2.VideoCapture(video_path)
@@ -80,41 +84,18 @@ def process_video(video_path, client_socket=None):
     H = get_homography_matrix()
     if H is None:
         print("Could not initialize coordinate transformation!")
-        return None, None, None
+        return None, None, None, None, None, None
 
     if not cap.isOpened():
         print("Không thể mở video!")
-        return None, None, None
+        return None, None, None, None, None, None
 
-    random_point_pixel = None
-    random_point_real = None
+    # random_point_pixel = None
+    # random_point_real = None
 
     last_car_x, last_car_y, last_car_yaw = None, None, None
+    car_x_start, car_y_start, car_yaw_start = None, None, None
 
-    def mouse_callback(event, x, y, flags, param):
-        nonlocal random_point_pixel, random_point_real
-        if event == cv2.EVENT_LBUTTONDOWN:
-            if random_point_pixel is None:
-                random_point_pixel = (x, y)
-                real_coords = pixel_to_real((x, y), H)
-                if real_coords:
-                    random_point_real = real_coords
-                    print(f"\nSelected random point:")
-                    print(f"Pixel coordinates: ({x}, {y})")
-                    print(f"Real coordinates: ({real_coords[0]:.3f}, {real_coords[1]:.3f})")
-            else:
-                real_coords = pixel_to_real((x, y), H)
-                if real_coords:
-                    car_x, car_y = real_coords
-                    print(f"Clicked point - Pixel: ({x}, {y}) - Real: ({car_x:.3f}, {car_y:.3f})")
-                    cv2.circle(frame, (x, y), 5, (255, 0, 0), -1)
-                    cv2.putText(frame, f"({car_x:.2f}, {car_y:.2f})",
-                               (x + 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-    cv2.namedWindow("AprilTag Detection")
-    cv2.setMouseCallback("AprilTag Detection", mouse_callback)
-
-    print("\nClick anywhere on the frame to select a random point...")
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -124,13 +105,6 @@ def process_video(video_path, client_socket=None):
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         height, width = frame.shape[:2]
-
-        if random_point_pixel:
-            x_goal, y_goal = random_point_pixel
-            cv2.circle(frame, (x_goal, y_goal), 5, (0, 255, 255), -1)
-            if random_point_real:
-                cv2.putText(frame, f"Random: ({random_point_real[0]:.2f}, {random_point_real[1]:.2f})",
-                           (x_goal + 10, y_goal - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         tags = detector.detect(gray)
         car_x, car_y, car_yaw = None, None, None
@@ -164,12 +138,17 @@ def process_video(video_path, client_socket=None):
                 arrow_y = int(tag_y + 30 * np.sin(car_yaw_rad))
                 cv2.arrowedLine(frame, (tag_x, tag_y), (arrow_x, arrow_y), (0, 255, 0), 2, tipLength=0.3)
 
-                if car_x is not None and car_y is not None and car_yaw_deg is not None:
-                    last_car_x, last_car_y, last_car_yaw = car_x, car_y, car_yaw_deg
+        if car_x is not None and car_y is not None and car_yaw_deg is not None:
+            if car_x_start is None and car_y_start is None and car_yaw_start is None:
+                car_x_start, car_y_start, car_yaw_start = car_x, car_y, car_yaw_deg
+                last_car_x, last_car_y, last_car_yaw = car_x, car_y, car_yaw_deg
+                print("\nLấy xong vị trí ban đầu. Thoát...")
+                break
 
-            cv2.circle(frame, (tag_x, tag_y), 5, (0, 0, 255), -1)
-            cv2.putText(frame, f"ID: {tag.tag_id}",
-                        (tag_x + 10, tag_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+        cv2.circle(frame, (tag_x, tag_y), 5, (0, 0, 255), -1)
+        cv2.putText(frame, f"ID: {tag.tag_id}",
+                (tag_x + 10, tag_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
         cv2.imshow("AprilTag Detection", frame)
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -177,11 +156,39 @@ def process_video(video_path, client_socket=None):
 
     cap.release()
     cv2.destroyAllWindows()
-    return last_car_x, last_car_y, last_car_yaw
+    return car_x_start, car_y_start, car_yaw_start, last_car_x, last_car_y, last_car_yaw
 
 def run_apriltag(video_path):
     return process_video(video_path)
 
 if __name__ == "__main__":
-    car_x, car_y, car_yaw = run_apriltag('/Users/laptopjp/Desktop/VS_Code/HybridAStar/tester1.mp4')
-    print(f"Car Position: X={car_x:.2f}, Y={car_y:.2f}, Yaw={car_yaw:.2f}")
+    car_x_start, car_y_start, car_yaw_start, car_x, car_y, car_yaw = run_apriltag('/Users/laptopjp/Desktop/VS_Code/HybridAStar/tester1.mp4')
+    print(f"Initial Car Position: X={car_x_start:.2f}, Y={car_y_start:.2f}, Yaw={car_yaw_start:.2f}")
+    print(f"Last Car Position: X={car_x:.2f}, Y={car_y:.2f}, Yaw={car_yaw:.2f}")
+    
+
+if car_x_start is not None and car_y_start is not None and car_x is not None and car_y is not None:
+    plt.figure(figsize=(8, 6))
+    plt.plot(car_x_start, car_y_start, 'go', label='Start Position')  # Green
+    plt.plot(car_x, car_y, 'ro', label='End Position')  # Red
+    plt.arrow(car_x_start, car_y_start,
+              0.3 * np.cos(np.deg2rad(car_yaw_start)),
+              0.3 * np.sin(np.deg2rad(car_yaw_start)),
+              head_width=0.1, head_length=0.1, fc='green', ec='green')
+    plt.arrow(car_x, car_y,
+              0.3 * np.cos(np.deg2rad(car_yaw)),
+              0.3 * np.sin(np.deg2rad(car_yaw)),
+              head_width=0.1, head_length=0.1, fc='red', ec='red')
+
+    # Vẽ vùng bản đồ nếu bạn có AprilTag định nghĩa góc bản đồ
+    for tag_id, coord in REFERENCE_POINTS.items():
+        plt.plot(coord[0], coord[1], 'ks')
+        plt.text(coord[0] + 0.1, coord[1] + 0.1, f'ID {tag_id}', fontsize=10)
+
+    plt.xlabel("X (meters)")
+    plt.ylabel("Y (meters)")
+    plt.title("Car Position Detected by AprilTag")
+    plt.legend()
+    plt.grid(True)
+    plt.axis('equal')
+    plt.show()
